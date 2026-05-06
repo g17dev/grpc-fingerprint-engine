@@ -6,3 +6,6 @@ build
 grpcenv
 vendor
 dist
+build/
+fingerprint_server
+*.log
