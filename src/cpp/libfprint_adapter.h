@@ -2,6 +2,7 @@
 #define LIBFPRINT_ADAPTER_H
 
 #include <string>
+#include <vector>
 
 bool fp_init_device();
 std::string capture_to_fmd();

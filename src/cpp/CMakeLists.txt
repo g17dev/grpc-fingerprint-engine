@@ -58,4 +58,3 @@ target_link_libraries(fingerprint_server
     ${_PROTOBUF_LIBPROTOBUF})
 
 target_include_directories(fingerprint_server PRIVATE ${LIBFPRINT_INCLUDE_DIRS} ${GLIB_INCLUDE_DIRS})
-EOF

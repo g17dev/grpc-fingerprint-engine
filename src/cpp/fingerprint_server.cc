@@ -5,6 +5,8 @@
 #include <cstring>
 #include <algorithm>
 #include <glib.h>
+#include <sstream>
+#include <cmath>
 
 #include "base64.h"
 #include <grpc/grpc.h>
@@ -37,13 +39,50 @@ using std::cout;
 using std::endl;
 using std::unique_ptr;
 
+// Parsear minucias
+std::vector<std::pair<int,int>> parse_minutiae(const std::string& fmd) {
+    std::vector<std::pair<int,int>> minutiae;
+    std::stringstream ss(fmd);
+    std::string minutia_str;
+    while (std::getline(ss, minutia_str, ';')) {
+        size_t comma = minutia_str.find(',');
+        if (comma != std::string::npos) {
+            int x = std::stoi(minutia_str.substr(0, comma));
+            int y = std::stoi(minutia_str.substr(comma + 1));
+            minutiae.push_back({x, y});
+        }
+    }
+    return minutiae;
+}
+
+// Comparación con 2 pasos: distancia + diferencia de cantidad
+double compare_minutiae(const std::vector<std::pair<int,int>>& m1, 
+                        const std::vector<std::pair<int,int>>& m2) {
+    if (m1.empty() || m2.empty()) return 0.0;
+    
+    const double DISTANCE_THRESHOLD = 30.0;
+    int match_count = 0;
+    
+    for (const auto& min1 : m1) {
+        for (const auto& min2 : m2) {
+            double dist = sqrt(pow(min1.first - min2.first, 2) + 
+                              pow(min1.second - min2.second, 2));
+            if (dist <= DISTANCE_THRESHOLD) {
+                match_count++;
+                break;
+            }
+        }
+    }
+    
+    double similitud = (double)match_count / std::min(m1.size(), m2.size()) * 100.0;
+    return similitud;
+}
+
 class FingerPrintImpl final : public FingerPrint::Service {
     public:
         Status EnrollFingerprint(ServerContext* context, const EnrollmentRequest* enrollmentRequest, EnrolledFMD* enrolledFMD) {
             std::string fmd = capture_to_fmd();
-            if (fmd.empty()) {
-                return Status(grpc::StatusCode::INTERNAL, "No se pudo capturar la huella");
-            }
+            if (fmd.empty()) return Status(grpc::StatusCode::INTERNAL, "No se pudo capturar la huella");
             enrolledFMD->set_base64enrolledfmd(fmd);
             return Status::OK;
         }
@@ -54,64 +93,38 @@ class FingerPrintImpl final : public FingerPrint::Service {
                 verification_response->set_match(false);
                 return Status(grpc::StatusCode::INTERNAL, "No se pudo capturar la huella");
             }
-            
-            gsize current_len;
-            guchar *current_data = g_base64_decode(current_fmd.c_str(), &current_len);
-            if (!current_data || current_len < 100) {
+
+            auto current_min = parse_minutiae(current_fmd);
+            if (current_min.empty()) {
                 verification_response->set_match(false);
                 return Status::OK;
             }
-            
+
             for (const auto& candidate : verification_request->fmdcandidates()) {
-                std::string stored_fmd = candidate.base64enrolledfmd();
+                auto stored_min = parse_minutiae(candidate.base64enrolledfmd());
                 
-                gsize stored_len;
-                guchar *stored_data = g_base64_decode(stored_fmd.c_str(), &stored_len);
-                if (!stored_data || stored_len < 100) continue;
-                
-                if (stored_len == current_len) {
-                    int matches = 0;
-                    int total_checks = 0;
+                if (!stored_min.empty()) {
+                    double similitud = compare_minutiae(stored_min, current_min);
+                    if (similitud > 100.0) similitud = 100.0;
                     
-                    // Zona 1: primeros 100 bytes
-                    for (int i = 0; i < 100 && i < (int)stored_len; i++) {
-                        if (stored_data[i] == current_data[i]) matches++;
-                        total_checks++;
-                    }
+                    // Diferencia en cantidad de minucias
+                    int diff = abs((int)stored_min.size() - (int)current_min.size());
                     
-                    // Zona 2: bytes del medio
-                    int mid = stored_len / 2;
-                    for (int i = mid - 50; i < mid + 50 && i < (int)stored_len; i++) {
-                        if (i >= 0 && stored_data[i] == current_data[i]) matches++;
-                        total_checks++;
-                    }
-                    
-                    // Zona 3: últimos 100 bytes
-                    int start = stored_len - 100;
-                    for (int i = start; i < (int)stored_len; i++) {
-                        if (i >= 0 && stored_data[i] == current_data[i]) matches++;
-                        total_checks++;
-                    }
-                    
-                    double similitud = (double)matches / total_checks * 100.0;
-                    cout << "Similitud: " << similitud << "% (" << matches << "/" << total_checks << ")" << endl;
-                    
-                    g_free(stored_data);
-                    
-                    if (similitud >= 70.0) {
+                    cout << "Similitud: " << similitud << "% | Minucias: " 
+                         << stored_min.size() << " vs " << current_min.size() 
+                         << " (diff=" << diff << ")" << endl;
+
+                    // Mismo dedo: similitud > 80% Y diferencia de minucias < 15
+                    if (similitud >= 80.0 && diff <= 15) {
                         cout << "✅ Match!" << endl;
                         verification_response->set_match(true);
-                        g_free(current_data);
                         return Status::OK;
                     }
-                } else {
-                    g_free(stored_data);
                 }
             }
-            
+
             cout << "❌ No match" << endl;
             verification_response->set_match(false);
-            g_free(current_data);
             return Status::OK;
         }
 
@@ -124,11 +137,7 @@ class FingerPrintImpl final : public FingerPrint::Service {
 void RunServer() {
     const char * port = getenv("PORT");
     string  server_address("0.0.0.0:");
-    if (port && strlen(port) <= strlen(MAX_PORT)) {
-        server_address.append(port);
-    } else {
-        server_address.append(DEFAULT_PORT);
-    }
+    server_address.append(port && strlen(port) <= strlen(MAX_PORT) ? port : DEFAULT_PORT);
 
     FingerPrintImpl service;
     ServerBuilder builder;
