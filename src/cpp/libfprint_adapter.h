@@ -2,10 +2,9 @@
 #define LIBFPRINT_ADAPTER_H
 
 #include <string>
-#include <vector>
 
 bool fp_init_device();
-std::string capture_to_fmd();
+std::string capture_to_fmd(int duration_seconds = 4);
 void fp_close_device();
 
 #endif

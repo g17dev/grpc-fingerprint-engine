@@ -81,14 +81,14 @@ double compare_minutiae(const std::vector<std::pair<int,int>>& m1,
 class FingerPrintImpl final : public FingerPrint::Service {
     public:
         Status EnrollFingerprint(ServerContext* context, const EnrollmentRequest* enrollmentRequest, EnrolledFMD* enrolledFMD) {
-            std::string fmd = capture_to_fmd();
+            std::string fmd = capture_to_fmd(4);
             if (fmd.empty()) return Status(grpc::StatusCode::INTERNAL, "No se pudo capturar la huella");
             enrolledFMD->set_base64enrolledfmd(fmd);
             return Status::OK;
         }
 
         Status VerifyFingerprint(ServerContext* context, const VerificationRequest* verification_request, VerificationResponse* verification_response) {
-            std::string current_fmd = capture_to_fmd();
+            std::string current_fmd = capture_to_fmd(2);
             if (current_fmd.empty()) {
                 verification_response->set_match(false);
                 return Status(grpc::StatusCode::INTERNAL, "No se pudo capturar la huella");

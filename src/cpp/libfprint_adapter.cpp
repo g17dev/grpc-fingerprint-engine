@@ -27,10 +27,10 @@ bool fp_init_device() {
     return true;
 }
 
-std::string capture_to_fmd() {
+std::string capture_to_fmd(int duration_seconds) {
     if (!global_device) return "";
     
-    std::cout << "🔵 Coloca tu dedo en el lector..." << std::endl;
+    std::cout << "🔵 Coloca tu dedo en el lector (" << duration_seconds << "s)..." << std::endl;
     
     FpImage *best_img = nullptr;
     std::string best_fmd = "";
@@ -39,8 +39,7 @@ std::string capture_to_fmd() {
     
     auto start = std::chrono::steady_clock::now();
     
-    // Capturar durante 4 segundos exactos
-    while (std::chrono::steady_clock::now() - start < std::chrono::seconds(4)) {
+    while (std::chrono::steady_clock::now() - start < std::chrono::seconds(duration_seconds)) {
         GError *error = nullptr;
         FpImage *img = fp_device_capture_sync(global_device, TRUE, nullptr, &error);
         
@@ -71,9 +70,7 @@ std::string capture_to_fmd() {
         if (error) g_clear_error(&error);
     }
     
-    std::cout << "✅ Captura completada | Frames: " << frames 
-              << " | Mejor muestra: " << best_minutiae << " minucias" << std::endl;
-    std::cout << "👆 Puedes retirar tu dedo" << std::endl;
+    std::cout << "✅ Listo | Frames: " << frames << " | Minucias: " << best_minutiae << std::endl;
     
     if (best_img) g_object_unref(best_img);
     return best_fmd;
